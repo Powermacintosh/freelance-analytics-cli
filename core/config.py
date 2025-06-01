@@ -16,7 +16,7 @@ class LLMGroqConfiguration(BaseModel):
 
 
 class LLMGigaChatConfiguration(BaseModel):
-    model: str = 'GigaChat-2-Max'
+    model: str = 'GigaChat-2'
     verify_ssl_certs: bool = False
     api_key: str = os.getenv('GIGACHAT_API_KEY', '')
 
@@ -26,7 +26,7 @@ class Setting(BaseSettings):
     llm_groq: LLMGroqConfiguration = LLMGroqConfiguration()
     llm_gigachat: LLMGigaChatConfiguration = LLMGigaChatConfiguration()
     allowed_llm_model: str = 'llama3-70b-8192'
-    # allowed_llm_model: str = 'GigaChat-2-Max'
+    # allowed_llm_model: str = 'GigaChat-2'
     csv_path: str = 'data/freelancer_earnings_bd.csv'
 
     temperature: float = 0.1
@@ -35,7 +35,8 @@ class Setting(BaseSettings):
 
     max_retries_request_llm: int = 3 # количество попыток вызова при ошибке LLM
     sleep_time_for_retry_request_llm: int = 2 # время ожидания перед повторным вызовом при ошибке LLM
-    
+    max_batch_methods: int = 15 # максимальное количество инструментов (tools) за раз в batch_analytics
+
     BASE_PROMPT: str = (
         'Ты — ассистент, аналитик данных о фрилансерах.\n'
         'Твоя задача — понять какие данные пользователь хочет получить и вызвать соответствующую функцию.\n'
@@ -47,6 +48,8 @@ class Setting(BaseSettings):
         'Не добавляй [tool_name]: в ответ.\n'
         'При ответе показывай результат с соблюдением переноса строк, пунктуации и форматирования.\n'
         'При получении результата из инструмента (tool) не надо отчитываться перед пользователем или его благодарить!\n'
+        'Не вызывай за один batch_analytics методы с параметром by вместе с методами без параметра by. Для методов с by делай отдельные batch-запросы.\n'
+        'Не пиши план вызова инструментов и не перечисляй методы в ответе. Всегда вызывай нужные инструменты (tools) и выводи только их результат.\n'
         'И поскольку ты РУССКИЙ ассистент, веди диалог на РУССКОМ языке. Отвечай только на РУССКОМ языке.'
     )
 

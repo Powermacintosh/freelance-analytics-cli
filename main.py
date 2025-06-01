@@ -50,7 +50,7 @@ class LLMAgent:
         payload = {
             'messages': messages,
             'temperature': temperature,
-            'max_tokens': 2048
+            # 'max_tokens': 2048
         }
         logger.info(remove_surrogates(f'Параметры вызова LLM: {payload}'))
         try:
@@ -249,6 +249,9 @@ def batch_analytics(methods: List[BatchAnalyticsMethod]) -> str:
 
     Если by не указан, используется значение по умолчанию (обычно category).
     """
+
+    if len(methods) > settings.max_batch_methods:
+        methods = methods[:settings.max_batch_methods]
     results = []
     for m in methods:
         method_name = m.method
