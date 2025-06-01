@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  freelance-analytics-cli:
+    build: .
+    container_name: freelance-analytics-cli
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GIGACHAT_API_KEY=${GIGACHAT_API_KEY}
+    command: python main.py
+    stdin_open: true
+    tty: true
+  test:
+    build: .
+    volumes:
+      - ./data:/app/data
+    command: pytest

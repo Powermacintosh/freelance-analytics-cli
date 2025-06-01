@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "ai-freelance-analytics-cli"
+version = "0.1.0"
+description = ""
+authors = ["Powermacintosh <powermacintosh@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "core" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+python-dotenv = "^1.1.0"
+langchain = "^0.3.25"
+langchain-gigachat = "^0.3.10"
+langchain-openai = "^0.3.18"
+pydantic-settings = "^2.9.1"
+pytest = "^8.3.5"
+langgraph = "^0.4.7"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
