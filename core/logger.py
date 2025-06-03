@@ -56,6 +56,24 @@ logger_config = {
             'backupCount': 4,
             'formatter': 'std_format'
         },
+        'trim_logger': {
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'level': 'INFO',
+            'filename': 'logs/main/info_trimming.log',
+            'when': 'W0',
+            'interval': 1,
+            'backupCount': 4,
+            'formatter': 'std_format'
+        },
+        'deduped_logger': {
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'level': 'INFO',
+            'filename': 'logs/main/info_deduped.log',
+            'when': 'W0',
+            'interval': 1,
+            'backupCount': 4,
+            'formatter': 'std_format'
+        },
 	},
     'loggers': {
 		'data_analyzer_logger': {
@@ -71,6 +89,16 @@ logger_config = {
         'main_logger': {
             'level': 'INFO',
             'handlers': ['main_logger'],
+            'propagate': False
+        },
+        'trim_logger': {
+            'level': 'INFO',
+            'handlers': ['trim_logger'],
+            'propagate': False
+        },
+        'deduped_logger': {
+            'level': 'INFO',
+            'handlers': ['deduped_logger'],
             'propagate': False
         },
 	},

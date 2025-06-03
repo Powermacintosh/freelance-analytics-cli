@@ -14,43 +14,37 @@ class LLMGroqConfiguration(BaseModel):
     base_url: str = 'https://api.groq.com/openai/v1'
     api_key: str = os.getenv('GROQ_API_KEY', '')
 
+    BASE_PROMPT: str = (
+        'Ты — ассистент, аналитик данных о фрилансерах.\n'
+        'Твоя задача — понять какие данные пользователь хочет получить и вызвать соответствующую функцию (tool).\n'
+        'Если для ответа на вопрос пользователя требуется вызвать несколько инструментов (tools), то используй функцию batch_analytics.\n'
+        'Используй только инструменты для аналитики, даже если кажется, что ты знаешь ответ.\n'
+        'За один раз можно вызывать только один инструмент (tool).\n'
+        'Не вызывай несуществующие инструменты.\n'
+        'Нельзя делать несколько отдельных вызовов инструментов подряд - нужно либо собрать их все в один batch_analytics, либо вызвать один конкретный инструмент.\n'
+        'Когда пользователь спрашивает о доступных инструментах или метриках, ВСЕГДА перечисляй описание ВСЕХ доступных инструментов из списка ниже.\n'
+        'Если пользователь просит сводный отчет, то вызывай инструмент batch_analytics и передавай в него все инструменты, которые ему нужны.\n'
+        'И поскольку ты РУССКИЙ ассистент, веди диалог на РУССКОМ языке. Отвечай только на РУССКОМ языке.'
+    )
+    
+    system_prompt: str = f'{BASE_PROMPT}'
+
 
 class LLMGigaChatConfiguration(BaseModel):
-    model: str = 'GigaChat-2'
+    model: str = 'GigaChat-2-max'
     verify_ssl_certs: bool = False
     api_key: str = os.getenv('GIGACHAT_API_KEY', '')
-
-
-class Setting(BaseSettings):
-    
-    llm_groq: LLMGroqConfiguration = LLMGroqConfiguration()
-    llm_gigachat: LLMGigaChatConfiguration = LLMGigaChatConfiguration()
-    allowed_llm_model: str = 'llama3-70b-8192'
-    # allowed_llm_model: str = 'GigaChat-2'
-    csv_path: str = 'data/freelancer_earnings_bd.csv'
-
-    temperature: float = 0.1
-    llm_response_color: str = '\033[35m'
-    llm_response_color_reset: str = '\033[0m'
-
-    max_retries_request_llm: int = 3 # количество попыток вызова при ошибке LLM
-    sleep_time_for_retry_request_llm: int = 2 # время ожидания перед повторным вызовом при ошибке LLM
-    max_batch_methods: int = 15 # максимальное количество инструментов (tools) за раз в batch_analytics
 
     BASE_PROMPT: str = (
         'Ты — ассистент, аналитик данных о фрилансерах.\n'
         'Твоя задача — понять какие данные пользователь хочет получить и вызвать соответствующую функцию.\n'
         'Если для ответа на вопрос пользователя требуется вызвать несколько инструментов (tools), то используй функцию batch_analytics.\n'
-        'Вставляй результат вызова инструмента (tool) в ответ без изменений, без дополнительных комментариев, без перефразирования. И показывай пользователю.\n'
-        'Всегда используй инструменты для аналитики, даже если кажется, что ты знаешь ответ.\n'
+        'Если вызываешь инструмент batch_analytics, то ВСЕГДА показывай пользователю ВСЕ полученные данные в том виде, в котором они пришли от инструмента, без агрегации и сокращений.\n'
+        'За один раз можно вызывать только один инструмент (tool).\n'
         'Не вызывай несуществующие инструменты.\n'
-        'Отвечай только результатом, не указывай название инструмента или функцию, не добавляй префиксы.\n'
-        'Не добавляй [tool_name]: в ответ.\n'
-        'При ответе показывай результат с соблюдением переноса строк, пунктуации и форматирования.\n'
-        'При получении результата из инструмента (tool) не надо отчитываться перед пользователем или его благодарить!\n'
-        'Не вызывай за один batch_analytics методы с параметром by вместе с методами без параметра by. Для методов с by делай отдельные batch-запросы.\n'
-        'Не пиши план вызова инструментов и не перечисляй методы в ответе. Всегда вызывай нужные инструменты (tools) и выводи только их результат.\n'
-        'И поскольку ты РУССКИЙ ассистент, веди диалог на РУССКОМ языке. Отвечай только на РУССКОМ языке.'
+        'Нельзя делать несколько отдельных вызовов инструментов подряд - нужно либо собрать их все в один batch_analytics, либо вызвать один конкретный инструмент.\n'
+        'Когда пользователь спрашивает о доступных инструментах или метриках, ВСЕГДА перечисляй описание ВСЕХ доступных инструментов из списка ниже.\n'
+        'Если пользователь просит сводный отчет, то вызывай инструмент batch_analytics и передавай в него все инструменты, которые ему нужны.\n'
     )
 
     METHODS_LIST: str = """
@@ -87,20 +81,27 @@ class Setting(BaseSettings):
             - {"method": "<имя_метода>", "by": "<значение>"} — для методов с параметром by
     """
 
-    BATCH_ANALYTICS_EXAMPLE: str = """
-        **Пример для batch_analytics:**
-        [
-            {"method": "top5_regions_by_experts"},
-            {"method": "avg_hourly_rate_by", "by": "platform"},
-            {"method": "avg_hourly_rate_by", "by": "region"},
-            {"method": "avg_hourly_rate_by", "by": "experience"},
-            {"method": "avg_hourly_rate_by", "by": "project_type"},
-            {"method": "avg_success_rate_by", "by": "region"},
-            {"method": "percent_high_rehire"}
-        ]
+    system_prompt: str = f'{BASE_PROMPT}\n\n{METHODS_LIST}'
 
-        Не добавляй параметр by к функциям, которые его не принимают (см. список выше).
-    """
-    system_prompt: str = f'{BASE_PROMPT}\n\n{METHODS_LIST}\n\n{BATCH_ANALYTICS_EXAMPLE}'
+
+class Setting(BaseSettings):
+    
+    llm_groq: LLMGroqConfiguration = LLMGroqConfiguration()
+    llm_gigachat: LLMGigaChatConfiguration = LLMGigaChatConfiguration()
+    allowed_llm_model: str = 'llama3-70b-8192'
+    # allowed_llm_model: str = 'GigaChat-2-max'
+    csv_path: str = 'data/freelancer_earnings_bd.csv'
+
+    first_message: str = 'Привет! Я ассистент, аналитик данных о фрилансерах. Чем могу помочь сегодня?'
+
+    temperature: float = 0.1
+    llm_response_color: str = '\033[35m'
+    llm_response_color_reset: str = '\033[0m'
+
+    # max_prompt_tokens: int = 4096
+    max_human_tokens: int = 1024
+    max_history_pairs: int = 6
+    max_batch_methods: int = 15 # максимальное количество инструментов (tools) за раз в batch_analytics
+    
 
 settings = Setting()
