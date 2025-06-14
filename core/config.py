@@ -99,8 +99,8 @@ class Setting(BaseSettings):
     llm_response_color_reset: str = '\033[0m'
 
     # max_prompt_tokens: int = 4096
-    max_human_tokens: int = 1024
-    max_history_pairs: int = 6
+    max_length_human_prompt: int = 128
+    max_history_pairs: int = 3
     max_batch_methods: int = 15 # максимальное количество инструментов (tools) за раз в batch_analytics
     
 

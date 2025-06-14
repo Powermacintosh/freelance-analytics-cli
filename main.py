@@ -1,6 +1,5 @@
 import uuid, sys, re, inspect, logging.config
 from typing import Sequence, List, Union
-from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, tool
@@ -26,13 +25,13 @@ logging.config.dictConfig(logger_config)
 logger = logging.getLogger('main_logger')
 batch_analytics_logger = logging.getLogger('batch_analytics_logger')
 trim_logger = logging.getLogger('trim_logger')
-deduped_logger = logging.getLogger('deduped_logger')
 
 
 class LLMAgent:
 
     def __init__(self, model: 'LanguageModelLike', system_prompt: str, tools: Sequence['BaseTool']) -> None:
         self._model = model
+        self._token_history = []
         self._system_prompt = system_prompt
         self._config: RunnableConfig = {
             'configurable': {'thread_id': uuid.uuid4().hex}}
@@ -40,85 +39,26 @@ class LLMAgent:
             model,
             tools=tools,
             checkpointer=InMemorySaver(),
-            pre_model_hook=self._pre_model_hook
+            pre_model_hook=self._pre_model_hook,
+            # debug=True
         )
 
-    def _deduplicate_messages(
-        self,
-        messages: List[Union[SystemMessage, HumanMessage, AIMessage, ToolMessage]],
-        deduped: bool = False
-    ) -> List[Union[SystemMessage, HumanMessage, AIMessage, ToolMessage]]:
-        """Удаляет дублирующиеся пары сообщений, сохраняя только уникальные пары."""
-        deduped_logger.info('=== DEDUPLICATION START ===')
-        deduped_logger.info(f'Всего сообщений на входе: {len(messages)}')
-        
-        # Сохраняем системное сообщение
-        system_msg = next((m for m in messages if isinstance(m, SystemMessage)), None)
-        
-        # Группируем сообщения в пары
-        pairs = []
-        current_pair = []
-        
-        for msg in messages:
-            if isinstance(msg, SystemMessage):
-                continue
-                
-            current_pair.append(msg)
-            
-            # Если это ToolMessage или последнее сообщение, завершаем пару
-            if isinstance(msg, ToolMessage) or msg == messages[-1]:
-                if current_pair:
-                    pairs.append(current_pair)
-                    current_pair = []
-        
-        # Считаем дубликаты пар
-        pair_counts = {}
-        pair_details = {}
-        
-        for pair in pairs:
-            # Создаем ключ пары из контента всех сообщений
-            pair_key = tuple(msg.content for msg in pair)
-            
-            if pair_key not in pair_counts:
-                pair_counts[pair_key] = 0
-                pair_details[pair_key] = []
-            pair_counts[pair_key] += 1
-            pair_details[pair_key].append([{
-                'type': type(msg).__name__,
-                'id': getattr(msg, 'id', 'no_id'),
-                'name': getattr(msg, 'name', 'no_name')
-            } for msg in pair])
-            
-        # Логируем дубликаты пар
-        for pair_key, count in pair_counts.items():
-            if count > 1:
-                deduped_logger.info(f'Найдена дублирующаяся пара! Встречается {count} раз:')
-                for pair_detail in pair_details[pair_key]:
-                    deduped_logger.info('  Пара:')
-                    for msg_detail in pair_detail:
-                        deduped_logger.info(f'    - {msg_detail["type"]} (id: {msg_detail["id"]}, name: {msg_detail["name"]})')
-                
-        if not deduped:
-            deduped_logger.info('=== DEDUPLICATION END (только подсчет) ===')
-            return messages
-                
-        # Удаляем дубликаты пар, сохраняя порядок
-        seen_pairs = set()
-        deduped_messages = []
-        
-        if system_msg:
-            deduped_messages.append(system_msg)
-            
-        for pair in pairs:
-            pair_key = tuple(msg.content for msg in pair)
-            if pair_key not in seen_pairs:
-                seen_pairs.add(pair_key)
-                deduped_messages.extend(pair)
-                deduped_logger.info(f'Сохраняю уникальную пару: {[type(msg).__name__ for msg in pair]}')
-                
-        deduped_logger.info('=== DEDUPLICATION END (удаление дубликатов) ===')
-        deduped_logger.info(f'Было сообщений: {len(messages)}, стало: {len(deduped_messages)}')
-        return deduped_messages
+    def _update_token_history(self, token_info: dict):
+        total = (
+            token_info.get('total_tokens') or
+            token_info.get('usage', {}).get('total_tokens') or
+            token_info.get('usage_total_tokens') or
+            0
+        )
+        self._token_history.append({'total_tokens': total})
+
+    @property
+    def _total_tokens_spent(self) -> int:
+        def extract_total(pair):
+            if 'total_tokens' in pair:
+                return pair['total_tokens']
+            return 0
+        return sum(extract_total(pair) for pair in self._token_history)
 
     def _trim_messages_by_pairs(
         self,
@@ -171,17 +111,15 @@ class LLMAgent:
         return result
 
     def _pre_model_hook(self, state):
-        state['messages'] = self._deduplicate_messages(state['messages'])
         trimmed = self._trim_messages_by_pairs(
             state['messages'],
             settings.max_history_pairs
         )
         return {'llm_input_messages': trimmed}
 
-    def _check_user_prompt_length(self, message: HumanMessage, max_tokens: int) -> None:
-        tokens = count_tokens_approximately([message])
-        if tokens > max_tokens:
-            logger.error(f'User prompt слишком длинный: {tokens} токенов (лимит {max_tokens})')
+    def _check_user_prompt_length(self, message: str, max_length: int) -> None:
+        if len(message) > max_length:
+            logger.error(f'User prompt слишком длинный: {len(message)} символов (лимит {max_length})')
             raise ValueError(f'Слишком длинный запрос, попробуйте его сократить')
 
     def invoke(
@@ -189,15 +127,14 @@ class LLMAgent:
         content: str,
         temperature: float = settings.temperature
     ) -> str:
-        logger.info(remove_surrogates(f'Thread_id: {self._config["configurable"]["thread_id"]}'))
+        logger.info(f'Thread_id: {self._config["configurable"]["thread_id"]}')
         # Добавляем system prompt при первом запросе
         try:
             state = self._agent.get_state(self._config)
             messages = state.values.get('messages', [])
         except Exception:
             messages = []
-        user_message = HumanMessage(content=content)
-        self._check_user_prompt_length(user_message, settings.max_human_tokens)
+        self._check_user_prompt_length(content, settings.max_length_human_prompt)
         if not messages:
             payload_messages = [
                 {'role': 'system', 'content': self._system_prompt},
@@ -209,20 +146,23 @@ class LLMAgent:
             'messages': payload_messages,
             'temperature': temperature,
         }
-        logger.info(remove_surrogates(f'Параметры вызова LLM: {payload}'))
+        logger.info(f'Параметры вызова LLM: {payload}')
         try:
             result = self._agent.invoke(
                 payload,
                 config=self._config)
             llm_response = result['messages'][-1].content
             usage = None
+           
             if isinstance(result, dict) and 'messages' in result:
                 for msg in reversed(result['messages']):
                     if hasattr(msg, 'response_metadata') and msg.response_metadata and 'token_usage' in msg.response_metadata:
                         usage = msg.response_metadata['token_usage']
                         break
             if usage:
-                logger.info(f"Токены и расходы: {usage}")
+                self._update_token_history(usage)
+                logger.info(f'Всего использовано токенов: {self._total_tokens_spent}, в запросе: {usage}')
+            
             return llm_response
         except Exception as e:
             logger.error(remove_surrogates(f'LLM ERROR: {e}'))
@@ -358,23 +298,15 @@ def batch_analytics(methods: List[BatchAnalyticsMethod]) -> str:
     """
     Универсальный инструмент для генерации отчёта по нескольким аналитическим вопросам.
 
-    Каждый элемент списка methods — это dict с ключом:
-      - method: имя метода
-      - by: параметр группировки (для методов с by, опционально)
-
-    Примеры:
-    [
-        {"method": "top5_regions_by_experts"},
-        {"method": "avg_hourly_rate_by", "by": "platform"},
-        {"method": "avg_success_rate_by", "by": "region"},
-        {"method": "percent_high_rehire"}
-    ]
+    Каждый элемент списка methods:
+    - {"method": "<имя_метода>"} — для методов без параметров
+    - {"method": "<имя_метода>", "by": "<значение>"} — для методов с параметром by
 
     Если by не указан, используется значение по умолчанию (обычно category).
     """
     batch_analytics_logger.warning(f'batch_analytics: вызвано методов: {len(methods)}')
-    if len(methods) > settings.max_batch_methods:
-        methods = methods[:settings.max_batch_methods]
+    # if len(methods) > settings.max_batch_methods:
+    #     methods = methods[:settings.max_batch_methods]
     results = []
     for m in methods:
         method_name = m.method
